@@ -139,33 +139,36 @@ class ModelWrapper(nn.Module):
     def get_activation(self, name):
         #https://github.com/mega002/lm-debugger/blob/01ba7413b3c671af08bc1c315e9cc64f9f4abee2/flask_server/req_res_oop.py#L57
         def hook(module, input, output):
-            if "in_sln" in name:
-                num_tokens = list(input[0].size())[1]
-                self.model.activations_[name] = input[0][:, num_tokens - 1].detach()
-            elif "mlp" in name or "attn" in name or "m_coef" in name:
-                if "attn" in name:
-                    num_tokens = list(output[0].size())[1]
-                    self.model.activations_[name] = output[0][:, num_tokens - 1].detach()
-                    self.model.activations_['in_'+name] = input[0][:, num_tokens - 1].detach()
-                elif "mlp" in name:
-                    num_tokens = list(output[0].size())[0]  # [num_tokens, 3072] for values;
-                    self.model.activations_[name] = output[0][num_tokens - 1].detach()
-                elif "m_coef" in name:
-                    num_tokens = list(input[0].size())[1]  # (batch, sequence, hidden_state)
-                    self.model.activations_[name] = input[0][:, num_tokens - 1].detach()
-            elif "residual" in name or "embedding" in name:
-                num_tokens = list(input[0].size())[1]  # (batch, sequence, hidden_state)
-                if name == "layer_residual_" + str(self.num_layers-1):
-                    self.model.activations_[name] = self.model.activations_[
-                                                        "intermediate_residual_" + str(final_layer)] + \
-                                                    self.model.activations_["mlp_" + str(final_layer)]
+            if "mlp" in name:
+                num_tokens = list(output[0].size())[0]  # [num_tokens, 3072] for values;
+                self.model.activations_[name] = output[0][num_tokens - 1].detach()
+            # if "in_sln" in name:
+            #     num_tokens = list(input[0].size())[1]
+            #     self.model.activations_[name] = input[0][:, num_tokens - 1].detach()
+            # elif "mlp" in name or "attn" in name or "m_coef" in name:
+            #     if "attn" in name:
+            #         num_tokens = list(output[0].size())[1]
+            #         self.model.activations_[name] = output[0][:, num_tokens - 1].detach()
+            #         #self.model.activations_['in_'+name] = input[0][:, num_tokens - 1].detach() # cause tuple index out of range for gpt-j (input is empnty somehow)
+            #     elif "mlp" in name:
+            #         num_tokens = list(output[0].size())[0]  # [num_tokens, 3072] for values;
+            #         self.model.activations_[name] = output[0][num_tokens - 1].detach()
+            #     elif "m_coef" in name:
+            #         num_tokens = list(input[0].size())[1]  # (batch, sequence, hidden_state)
+            #         self.model.activations_[name] = input[0][:, num_tokens - 1].detach()
+            # elif "residual" in name or "embedding" in name:
+            #     num_tokens = list(input[0].size())[1]  # (batch, sequence, hidden_state)
+            #     if name == "layer_residual_" + str(self.num_layers-1):
+            #         self.model.activations_[name] = self.model.activations_[
+            #                                             "intermediate_residual_" + str(final_layer)] + \
+            #                                         self.model.activations_["mlp_" + str(final_layer)]
 
-                else:
-                    if 'out' in name:
-                        self.model.activations_[name] = output[0][num_tokens-1].detach()
-                    else:
-                        self.model.activations_[name] = input[0][:,
-                                                            num_tokens - 1].detach()
+            #     else:
+            #         if 'out' in name:
+            #             self.model.activations_[name] = output[0][num_tokens-1].detach()
+            #         else:
+            #             self.model.activations_[name] = input[0][:,
+            #                                                 num_tokens - 1].detach()
 
         return hook
 
@@ -183,6 +186,7 @@ class GPTJWrapper(ModelWrapper):
                 normed = h #ln_f would already have been applied
             else:
                 normed = self.model.transformer.ln_f(h)
+            normed = normed.to(self.model.lm_head.weight.device)
             l = torch.matmul(self.model.lm_head.weight, normed.T)
             logits.append(l)
         return logits
