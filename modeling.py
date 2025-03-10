@@ -81,11 +81,15 @@ class ModelWrapper(nn.Module):
         raise Exception("Layer decode has to be implemented!")
 
     def get_layers(self, tokens, **kwargs):
+        """
+        Returns 
+        logits for each layer, shape: (n_layer, vocab_size)
+        """
         outputs = self.model(input_ids=tokens, output_hidden_states=True, **kwargs)
         hidden_states, true_logits = outputs.hidden_states, outputs.logits
-        logits = self.layer_decode(hidden_states)
+        logits = self.layer_decode(hidden_states) 
         #logits[-1] = true_logits.squeeze(0)[-1].unsqueeze(-1) #we used to just replace the last logits because we were applying ln_f twice
-        return torch.stack(logits).squeeze(-1)#, true_logits.squeeze(0)
+        return torch.stack(logits).squeeze(-1)#, true_logits.squeeze(0) # shape: (n_layer, vocab_size)
 
     def get_layers_w_attns(self, tokens, **kwargs):
         outputs = self.model(input_ids=tokens, output_hidden_states=True, output_attentions=True, **kwargs)
@@ -174,7 +178,26 @@ class ModelWrapper(nn.Module):
 
     def reset_activations(self):
         self.model.activations_ = {}
+    
+    def tokenize_ids_str(self, text):
+        inp_ids = self.tokenize(text)
+        str_toks = self.list_decode(inp_ids[0])
+        return inp_ids, str_toks
 
+    def reset_mlps(self, mlps):
+        for i in range(len(self.model.transformer.h)):
+            self.model.transformer.h[i].mlp = mlps[i]
+
+    def o_intervention(self, o_func, layer_start, layer_end=None):
+        if layer_end is None:
+            layer_end = self.model.config.n_layer
+        
+        for i in range(layer_start, layer_end): 
+            self.model.transformer.h[i].mlp = LambdaLayer(lambda x: o_func) #instead of outputting FFN(x), output o_func
+
+    def reset_mask(self):
+        headmask = torch.ones(len(self.model.transformer.h), self.model.config.n_head)
+        return headmask
         
 class GPTJWrapper(ModelWrapper):
 
@@ -261,7 +284,7 @@ class GPT2Wrapper(ModelWrapper):
         for hook in self.hooks:
             hook.remove()
 
-    def reset_activations():
+    def reset_activations(self):
         self.activations_ = {}
         self.last_pasts = {}
            
